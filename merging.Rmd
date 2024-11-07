@@ -1,0 +1,88 @@
+---
+title: "merging"
+author: "Zhiying"
+date: "2024-11-06"
+output: html_document
+---
+
+```{r}
+## Call packages
+library(data.stable)
+library(stringdist)
+library(haven)
+```
+
+```{r}
+# Merge two datasets
+
+fuzzy_merge_banks <- function(file1_path, file2_path, output_path, 
+                            id_col1, id_col2, threshold = 0.8) {
+  # Read files
+  message("Reading datasets...")
+  dt1 <- as.data.table(read_dta(file1_path))
+  dt2 <- as.data.table(read_dta(file2_path))
+  
+  # Convert IDs to character
+  dt1[[id_col1]] <- as.character(dt1[[id_col1]])
+  dt2[[id_col2]] <- as.character(dt2[[id_col2]])
+  
+  # Get unique IDs
+  ids1 <- unique(dt1[[id_col1]])
+  ids2 <- unique(dt2[[id_col2]])
+  
+  # Create distance matrix for unique IDs
+  message("Computing string distances...")
+  dist_mat <- stringdistmatrix(ids1, ids2, method = "jw")
+  
+  # Find best matches that meet threshold
+  message("Finding matches...")
+  matches <- data.table(
+    id1 = ids1,
+    id2 = character(length(ids1)),
+    score = numeric(length(ids1))
+  )
+  
+  for(i in seq_along(ids1)) {
+    best_match <- which.min(dist_mat[i,])
+    best_score <- 1 - dist_mat[i, best_match]  # Convert distance to similarity
+    
+    if(best_score >= threshold) {
+      matches$id2[i] <- ids2[best_match]
+      matches$score[i] <- best_score
+    }
+  }
+  
+  # Remove non-matches
+  matches <- matches[score > 0]
+  
+  # Create mapping and merge
+  message("Merging datasets...")
+  setnames(matches, "id1", id_col1)
+  setnames(matches, "id2", "matched_id")
+  
+  # Merge with first dataset
+  result <- merge(dt1, matches, by = id_col1, all.x = TRUE)
+  
+  # Merge with second dataset
+  setnames(dt2, id_col2, "matched_id")
+  result <- merge(result, dt2, by = "matched_id", all.x = TRUE)
+  
+  # Save result
+  message("Saving merged dataset...")
+  write_dta(result, output_path)
+  
+  message("Done!")
+}
+```
+
+```{r}
+fuzzy_merge_banks(
+  file1_path = "/Volumes/aae/users/zchen2365/update_uniqueid.dta",
+  file2_path = "/Volumes/aae/users/zchen2365/combined_necessary_uniqueid.dta",
+  output_path = "/Volumes/aae/users/zchen2365/merged_file.dta",
+  id_col1 = "bank_id",    # column name in first file
+  id_col2 = "bank_id",    # column name in second file
+  threshold = 0.8         # similarity threshold (0-1)
+)
+
+```
